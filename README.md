@@ -1,3 +1,6 @@
+Note: This project has been preceeded by https://github.com/centerepic/robloxmanager, please use it instead.
+Existing functionality should still work for the forseeable future, but may be obsoleted by Roblox changes.
+
 # ByeBanAsync
 Extremely simple and lighweight BanAsync alt-association wiper for Roblox.
 It is not guaranteed that this will always work/continue to work in the future.
