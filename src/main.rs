@@ -8,8 +8,8 @@ use term_size;
 use winreg::enums::*;
 use winreg::RegKey;
 
-#[derive(Debug)]
-struct NetworkAdapter { // god i love pasting
+#[derive(Debug, Clone)]
+struct NetworkAdapter {
     id: String,
     description: String,
     connection_name: String,
@@ -92,81 +92,7 @@ fn main() {
                         "[!]".yellow()
                     );
                 } else {
-                    println!("\n{} Available network adapters:", "[i]".blue());
-                    for (i, adapter) in adapters.iter().enumerate() {
-                        println!(
-                            "  {}{}{}: {}",
-                            "[".bold(),
-                            (i + 1).to_string().bold().cyan(),
-                            "]".bold(),
-                            adapter.description.italic()
-                        );
-                        println!(
-                            "     └─ Connection Name: '{}'",
-                            adapter.connection_name.dimmed()
-                        );
-                    }
-
-                    let selected_adapter = loop {
-                        print!(
-                            "\n{} Enter the number of the adapter to change: ",
-                            "[?]".cyan()
-                        );
-                        io::stdout().flush().unwrap(); // flush is now available
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input).unwrap();
-                        match input.trim().parse::<usize>() {
-                            Ok(num) if num > 0 && num <= adapters.len() => {
-                                break &adapters[num - 1];
-                            }
-                            _ => {
-                                println!(
-                                    "{} Invalid selection. Please enter a number from the list.",
-                                    "[!]".red()
-                                );
-                            }
-                        }
-                    };
-
-                    let random_mac = generate_random_mac_address();
-                    println!(
-                        "{} Attempting to set MAC for adapter: '{}' (ID: {})...",
-                        "[>]".magenta(),
-                        selected_adapter.description.italic(),
-                        selected_adapter.id
-                    );
-
-                    match change_mac_address(&selected_adapter.id, &random_mac) {
-                        Ok(_) => {
-                            println!(
-                                "{} Successfully updated registry for MAC address.",
-                                "[√]".green()
-                            );
-                            println!(
-                                "{} Attempting to restart network adapter '{}' to apply changes...",
-                                "[>]".magenta(),
-                                selected_adapter.connection_name.italic()
-                            );
-                            if let Err(e) =
-                                restart_network_adapter(&selected_adapter.connection_name)
-                            {
-                                eprintln!("{} Error restarting network adapter: {}. You may need to do this manually or reboot.", "[!!!]".red(), e);
-                            } else {
-                                println!("{} Network adapter '{}' restarted. MAC address change should now be active.", "[√]".green(), selected_adapter.connection_name.italic());
-                                println!(
-                                    "{} Verify with 'ipconfig /all' or 'getmac'.",
-                                    "[i]".blue()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "{} Error changing MAC address in registry: {}",
-                                "[!!!]".red(),
-                                e
-                            );
-                        }
-                    }
+                    mac_spoofing_loop(&adapters);
                 }
             }
             Err(e) => {
@@ -180,6 +106,188 @@ fn main() {
     exit_program();
 }
 
+fn mac_spoofing_loop(adapters: &[NetworkAdapter]) {
+    loop {
+        println!("\n{} Available network adapters:", "[i]".blue());
+        println!(
+            "  {}{}{}: {}",
+            "[".bold(),
+            "0".bold().cyan(),
+            "]".bold(),
+            "Change ALL adapters".bold().green()
+        );
+
+        for (i, adapter) in adapters.iter().enumerate() {
+            println!(
+                "  {}{}{}: {}",
+                "[".bold(),
+                (i + 1).to_string().bold().cyan(),
+                "]".bold(),
+                adapter.description.italic()
+            );
+            println!(
+                "     └─ Connection Name: '{}'",
+                adapter.connection_name.dimmed()
+            );
+        }
+
+        let selected_choice = loop {
+            print!(
+                "\n{} Enter the number of the adapter to change (0 = all, or 1-{}): ",
+                "[?]".cyan(),
+                adapters.len()
+            );
+            io::stdout().flush().unwrap();
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).unwrap();
+            match input.trim().parse::<usize>() {
+                Ok(num) if num <= adapters.len() => {
+                    break num;
+                }
+                _ => {
+                    println!(
+                        "{} Invalid selection. Please enter a number from 0 to {}.",
+                        "[!]".red(),
+                        adapters.len()
+                    );
+                }
+            }
+        };
+
+        if selected_choice == 0 {
+            change_all_adapters(adapters);
+        } else {
+            let adapter = &adapters[selected_choice - 1];
+            change_single_adapter(adapter);
+        }
+
+        print!(
+            "\n{} Do you want to change another adapter? (y/n): ",
+            "[?]".cyan()
+        );
+        io::stdout().flush().unwrap();
+        let mut another_choice = String::new();
+        io::stdin().read_line(&mut another_choice).unwrap();
+
+        if !another_choice.trim().eq_ignore_ascii_case("y") {
+            break;
+        }
+    }
+}
+
+fn change_single_adapter(adapter: &NetworkAdapter) {
+    loop {
+        let random_mac = generate_random_mac_address();
+        println!(
+            "{} Attempting to set MAC for adapter: '{}' (ID: {})...",
+            "[>]".magenta(),
+            adapter.description.italic(),
+            adapter.id
+        );
+
+        match change_mac_address(&adapter.id, &random_mac) {
+            Ok(_) => {
+                println!(
+                    "{} Successfully updated registry for MAC address.",
+                    "[√]".green()
+                );
+                println!(
+                    "{} Attempting to restart network adapter '{}' to apply changes...",
+                    "[>]".magenta(),
+                    adapter.connection_name.italic()
+                );
+                if let Err(e) = restart_network_adapter(&adapter.connection_name) {
+                    eprintln!("{} Error restarting network adapter: {}. You may need to do this manually or reboot.", "[!!!]".red(), e);
+                } else {
+                    println!(
+                        "{} Network adapter '{}' restarted. MAC address change should now be active.",
+                        "[√]".green(),
+                        adapter.connection_name.italic()
+                    );
+                    println!(
+                        "{} Verify with 'ipconfig /all' or 'getmac'.",
+                        "[i]".blue()
+                    );
+                }
+                break;
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} Error changing MAC address in registry: {}",
+                    "[!!!]".red(),
+                    e
+                );
+                print!(
+                    "\n{} Retry spoofing this adapter? (y/n): ",
+                    "[?]".cyan()
+                );
+                io::stdout().flush().unwrap();
+                let mut retry_choice = String::new();
+                io::stdin().read_line(&mut retry_choice).unwrap();
+
+                if !retry_choice.trim().eq_ignore_ascii_case("y") {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn change_all_adapters(adapters: &[NetworkAdapter]) {
+    let mut successful = 0;
+    let mut failed = 0;
+
+    for adapter in adapters {
+        let random_mac = generate_random_mac_address();
+        println!(
+            "\n{} Processing adapter: '{}' (ID: {})...",
+            "[>]".magenta(),
+            adapter.description.italic(),
+            adapter.id
+        );
+
+        match change_mac_address(&adapter.id, &random_mac) {
+            Ok(_) => {
+                println!(
+                    "{} Successfully updated registry for MAC address.",
+                    "[√]".green()
+                );
+                println!(
+                    "{} Attempting to restart network adapter '{}' to apply changes...",
+                    "[>]".magenta(),
+                    adapter.connection_name.italic()
+                );
+                if let Err(e) = restart_network_adapter(&adapter.connection_name) {
+                    eprintln!("{} Error restarting network adapter: {}. You may need to do this manually or reboot.", "[!!!]".red(), e);
+                    failed += 1;
+                } else {
+                    println!(
+                        "{} Network adapter '{}' restarted successfully.",
+                        "[√]".green(),
+                        adapter.connection_name.italic()
+                    );
+                    successful += 1;
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} Error changing MAC address in registry: {}",
+                    "[!!!]".red(),
+                    e
+                );
+                failed += 1;
+            }
+        }
+    }
+
+    println!(
+        "\n{} MAC spoofing completed. Successful: {}, Failed: {}",
+        "[i]".blue(),
+        successful.to_string().green(),
+        failed.to_string().red()
+    );
+}
+
 fn exit_program() {
     println!("\n{} Press Enter to exit...", "[...]".dimmed());
     let _ = io::stdin().read_line(&mut String::new());
@@ -190,7 +298,6 @@ fn generate_random_mac_address() -> String {
     let mut rng = rand::rng();
     let mut mac_bytes: [u8; 6] = [0; 6];
 
-    // Has to be 02 so wireless adapters work. No idea why, but TMAC said so.
     mac_bytes[0] = 0x02;
 
     for i in 1..6 {
@@ -219,7 +326,7 @@ fn list_network_adapters() -> io::Result<Vec<NetworkAdapter>> {
                     if let Ok(net_cfg_instance_id) =
                         adapter_key.get_value::<String, _>("NetCfgInstanceID")
                     {
-                        let connection_name_path = format!( // y is ts the only way to get it
+                        let connection_name_path = format!(
                             r"SYSTEM\CurrentControlSet\Control\Network\{{4D36E972-E325-11CE-BFC1-08002BE10318}}\{}\Connection",
                             net_cfg_instance_id
                         );
@@ -230,7 +337,7 @@ fn list_network_adapters() -> io::Result<Vec<NetworkAdapter>> {
                                 driver_desc.clone()
                             });
 
-                        let lower_desc = driver_desc.to_lowercase(); // why so many pasted adapters
+                        let lower_desc = driver_desc.to_lowercase();
                         if !lower_desc.contains("virtual")
                             && !lower_desc.contains("loopback")
                             && !lower_desc.contains("bluetooth")
